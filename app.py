@@ -1,107 +1,79 @@
 import streamlit as st
 from apify_client import ApifyClient
-from datetime import datetime
 
-# --- 1. SETTINGS & UI STYLE ---
-st.set_page_config(page_title="Artist Engagement Dashboard", layout="wide")
+# --- 1. CONFIG ---
+st.set_page_config(page_title="Artist Insights", layout="wide")
+st.title("📈 Artist Overview Dashboard")
 
-# ปรับแต่ง CSS ให้ Metric ดูพรีเมียมขึ้น
-st.markdown("""
-    <style>
-    .stMetric { background-color: #ffffff; border-radius: 12px; padding: 20px; border: 1px solid #f0f2f6; box-shadow: 0 4px 6px rgba(0,0,0,0.02); }
-    </style>
-    """, unsafe_allow_html=True)
-
-# ดึง Token จาก Secrets
 APIFY_TOKEN = st.secrets.get("APIFY_TOKEN", "")
 
-# --- 2. DATA FETCHING FUNCTION ---
-@st.cache_data(ttl=86400) # จำข้อมูลไว้ 24 ชม. เพื่อประหยัด Credits ($5/เดือน)
-def fetch_instagram_data(username):
-    if not APIFY_TOKEN:
-        return None
-    
+@st.cache_data(ttl=86400)
+def fetch_data(username):
+    if not APIFY_TOKEN: return None
     client = ApifyClient(APIFY_TOKEN)
-    
-    # ใช้ Actor: instagram-profile-scraper (ตัวนี้ให้ข้อมูล Like รายโพสต์มาด้วย)
-    run_input = { "usernames": [username] }
-    
     try:
-        # สั่งรันและรอผล (Asynchronous Process)
+        # ใช้ Actor ตัวที่เสถียรที่สุด
+        run_input = { "usernames": [username] }
         run = client.actor("apify/instagram-profile-scraper").call(run_input=run_input)
-        
-        # ดึงข้อมูลจากผลลัพธ์ (Dataset)
         items = list(client.dataset(run["defaultDatasetId"]).iterate_items())
         return items[0] if items else None
     except Exception as e:
-        st.error(f"Apify Error: {e}")
+        st.error(f"API Error: {e}")
         return None
 
-# --- 3. SIDEBAR NAVIGATION ---
-with st.sidebar:
-    st.image("https://cdn-icons-png.flaticon.com/512/1384/1384063.png", width=50)
-    st.title("Settings")
-    target_user = st.text_input("IG Username", value="aespa_official")
-    
-    if st.button("🔄 อัปเดตข้อมูลใหม่", use_container_width=True):
-        st.cache_data.clear()
-        st.rerun()
-    
-    st.divider()
-    st.info("💡 ข้อมูลจะถูกจำไว้ 24 ชม. เพื่อช่วยคุณประหยัด Credits ฟรีจาก Apify")
+# --- 2. SIDEBAR ---
+target_user = st.sidebar.text_input("IG Username", value="aespa_official")
+if st.sidebar.button("🔄 Refresh Data"):
+    st.cache_data.clear()
+    st.rerun()
 
-# --- 4. MAIN DASHBOARD DISPLAY ---
+# --- 3. MAIN DISPLAY ---
 if not APIFY_TOKEN:
-    st.warning("⚠️ โปรดตั้งค่า APIFY_TOKEN ใน Streamlit Secrets ก่อนเริ่มใช้งาน")
+    st.warning("⚠️ Please set APIFY_TOKEN in Secrets")
 else:
-    with st.spinner(f"Apify กำลังรวบรวมข้อมูล @{target_user} (ใช้เวลาประมาณ 15-30 วินาที)..."):
-        user_data = fetch_instagram_data(target_user)
+    with st.spinner("Loading Stats..."):
+        user = fetch_data(target_user)
         
-        if user_data:
-            # --- ส่วนหัว: Profile Overview ---
-            col_img, col_info = st.columns([1, 4])
-            with col_img:
-                st.image(user_data.get('profilePicUrl', ''), width=150)
-            with col_info:
-                st.title(user_data.get('fullName', target_user))
-                st.write(f"@{user_data.get('username', '')}")
-                st.write(f"📝 **Bio:** {user_data.get('biography', 'No bio available.')}")
-            
+        if user:
+            # --- Profile Header ---
+            c1, c2 = st.columns([1, 4])
+            with c1:
+                st.image(user.get('profilePicUrl', ''), width=150)
+            with c2:
+                st.header(user.get('fullName', target_user))
+                st.write(f"@{user.get('username', '')}")
+
             st.divider()
 
-            # --- ส่วนสถิติ: Metrics Overview ---
-            st.subheader("📊 Performance Summary")
+            # --- Metrics (จุดที่ปรับแก้ให้มองเห็นชัด) ---
+            # ใช้การดึงค่าแบบรองรับหลายชื่อ Key (Fallback Keys)
+            f_count = user.get('followersCount') or user.get('followers') or 0
+            p_count = user.get('postsCount') or user.get('mediaCount') or 0
             
-            # การคำนวณสถิติยอด Like และ Engagement
-            latest_posts = user_data.get('latestPosts', [])
-            followers = user_data.get('followersCount', 1) # กันหารด้วย 0
-            
-            if latest_posts:
-                total_likes = sum(p.get('likesCount', 0) for p in latest_posts)
-                avg_likes = total_likes / len(latest_posts)
-                # Engagement Rate = (Likes เฉลี่ย / Followers) * 100
-                er = (avg_likes / followers) * 100
-            else:
-                avg_likes, er = 0, 0
+            # คำนวณ Engagement จากโพสต์ล่าสุด
+            posts = user.get('latestPosts', [])
+            avg_likes = sum(p.get('likesCount', 0) for p in posts) / len(posts) if posts else 0
+            er = (avg_likes / f_count * 100) if f_count > 0 else 0
 
+            # แสดงผลแบบ Standard เพื่อเลี่ยงปัญหา CSS สีจาง
+            st.subheader("📊 Key Performance Indicators")
             m1, m2, m3, m4 = st.columns(4)
-            m1.metric("Followers 👥", f"{followers:,}")
-            m2.metric("Total Posts 📮", f"{user_data.get('postsCount', 0):,}")
-            m3.metric("Avg. Likes ❤️", f"{int(avg_likes):,}")
-            m4.metric("Engagement 🚀", f"{er:.2f}%")
+            
+            # ใส่ Label ให้ชัดเจนและใช้ตัวเลขสีเข้ม
+            m1.metric("Followers", f"{f_count:,}")
+            m2.metric("Total Posts", f"{p_count:,}")
+            m3.metric("Avg. Likes", f"{int(avg_likes):,}")
+            m4.metric("Engagement Rate", f"{er:.2f}%")
 
             st.divider()
 
-            # --- ส่วน Grid: Latest Content ---
-            st.subheader("🖼️ Latest Content Analysis")
-            if latest_posts:
+            # --- Grid Content ---
+            if posts:
+                st.subheader("📸 Recent Content")
                 grid = st.columns(3)
-                for i, post in enumerate(latest_posts[:6]): # แสดง 6 โพสต์ล่าสุด
+                for i, post in enumerate(posts[:6]):
                     with grid[i % 3]:
                         st.image(post.get('displayUrl'), use_container_width=True)
-                        st.caption(f"❤️ {post.get('likesCount', 0):,} Likes | 💬 {post.get('commentsCount', 0):,} Comments")
-            else:
-                st.info("ไม่พบข้อมูลโพสต์ล่าสุดในขณะนี้")
-                
+                        st.caption(f"❤️ {post.get('likesCount', 0):,} | 💬 {post.get('commentsCount', 0):,}")
         else:
-            st.error("ไม่สามารถดึงข้อมูลได้ โปรดตรวจสอบว่า Token ถูกต้องหรือชื่อ IG มีอยู่จริงหรือไม่")
+            st.error("❌ No data found. Please check the username.")
