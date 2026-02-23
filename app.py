@@ -1,52 +1,65 @@
 import streamlit as st
 import requests
-import pandas as pd
-import plotly.express as px
 
-st.set_page_config(page_title="Artist Mockup Dashboard", layout="wide")
-st.title("🎨 Artist Engagement Mockup (Stable API)")
+# 1. ตั้งค่าหน้าเว็บให้ดูสะอาดตา
+st.set_page_config(page_title="Artist Basic Stats", layout="centered")
+st.title("📱 Artist Profile Stats")
 
-# 1. ตั้งค่า API (แนะนำให้ใส่ใน Streamlit Secrets ภายหลัง)
-#API_KEY = st.sidebar.text_input("ใส่ RapidAPI Key", type="password")
-API_KEY = st.secrets["MY_API_KEY"]
-API_HOST = "instagram-scraper-stable-api.p.rapidapi.com"
+# 2. ส่วนตั้งค่าที่ Sidebar
+api_key = st.sidebar.text_input("ใส่ RapidAPI Key", type="password")
 target_user = st.sidebar.text_input("IG Username", value="aespa_official")
 
-# 2. ฟังก์ชันดึงข้อมูลแบบประหยัดโควตา (จำค่าไว้ 24 ชม.)
-@st.cache_data(ttl=86400) 
-def get_ig_data(username, key):
-    url = "https://instagram-scraper-stable-api.p.rapidapi.com/user_info"
+# 3. ฟังก์ชันดึงข้อมูล (จำค่าไว้ 24 ชม. เพื่อประหยัดโควตา 50 ครั้ง/เดือน)
+@st.cache_data(ttl=86400)
+def get_profile_data(username, key):
+    # ใช้ Endpoint ตัวหลักสำหรับข้อมูลโปรไฟล์
+    url = "https://instagram-scraper-stable-api.p.rapidapi.com/ig_profile_info.php"
     headers = {
         "X-RapidAPI-Key": key,
-        "X-RapidAPI-Host": API_HOST
+        "X-RapidAPI-Host": "instagram-scraper-stable-api.p.rapidapi.com"
     }
     querystring = {"username": username}
     
+    # ใช้ไลบรารี requests ตามมาตรฐานของ API เจ้านี้
     response = requests.get(url, headers=headers, params=querystring)
-    return response.json()
+    return response
 
-# 3. ส่วนแสดงผล
-if API_KEY:
-    if st.sidebar.button("ดึงข้อมูลใหม่ (ใช้โควตา)"):
-        st.cache_data.clear()
-        st.rerun()
+# 4. ส่วนการแสดงผลบนหน้าจอ
+if st.sidebar.button("อัปเดตข้อมูล"):
+    st.cache_data.clear()
+    st.rerun()
 
-    with st.spinner("กำลังติดต่อ API..."):
-        res = get_ig_data(target_user, API_KEY)
+if api_key:
+    with st.spinner("กำลังดึงข้อมูลจาก Instagram..."):
+        response = get_profile_data(target_user, api_key)
         
-        # ตรวจสอบว่า API ส่งข้อมูลมาถูกต้องไหม (ชื่อตัวแปรอาจปรับตาม JSON จริง)
-        if "data" in res:
-            user = res["data"]
-            # แสดง Metrics
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Followers", f"{user.get('follower_count', 0):,}")
-            c2.metric("Total Posts", f"{user.get('media_count', 0):,}")
-            c3.metric("Quota Status", "Active")
+        if response.status_code == 200:
+            res_data = response.json()
             
-            st.success(f"แสดงข้อมูลของ {user.get('full_name')} เรียบร้อย!")
-            # ตรงนี้คุณสามารถเพิ่มโค้ดทำกราฟจากข้อมูลใน user['edge_owner_to_timeline_media'] ได้
+            # ตรวจสอบโครงสร้างข้อมูล (JSON) ที่ได้มา
+            # หมายเหตุ: โครงสร้างข้อมูลอาจเปลี่ยนไปตามเวอร์ชันของ API
+            if "data" in res_data and "user" in res_data["data"]:
+                user = res_data["data"]["user"]
+                
+                st.header(f"✨ {user.get('full_name', target_user)}")
+                st.caption(f"ID: {user.get('id', '-')}")
+                
+                # แสดงผลด้วย Metric Card (ดูง่ายและสวย)
+                col1, col2, col3 = st.columns(3)
+                col1.metric("Followers", f"{user.get('follower_count', 0):,}")
+                col2.metric("Following", f"{user.get('following_count', 0):,}")
+                col3.metric("Posts", f"{user.get('media_count', 0):,}")
+                
+                st.divider()
+                st.subheader("💡 คำอธิบายโปรไฟล์ (Bio)")
+                st.write(user.get("biography", "ไม่มีข้อมูลคำอธิบาย"))
+                
+            else:
+                st.warning("ดึงข้อมูลสำเร็จ แต่โครงสร้างข้อมูลไม่ตรงกับที่คาดไว้")
+                st.write("ลองดูข้อมูลดิบที่ได้:")
+                st.json(res_data) # โชว์ JSON ทั้งหมดเพื่อเช็กชื่อตัวแปร
         else:
-            st.error("ไม่สามารถดึงข้อมูลได้ โปรดเช็ก API Key หรือ Username")
-            st.json(res) # แสดง Error เพื่อใช้ Debug
+            st.error(f"เกิดข้อผิดพลาด (Code: {response.status_code})")
+            st.write(response.text)
 else:
-    st.info("กรุณาใส่ API Key ใน Sidebar เพื่อเริ่มต้นครับ")
+    st.info("กรุณาใส่ RapidAPI Key ในแถบด้านข้างเพื่อเริ่มต้นครับ")
