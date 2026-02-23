@@ -1,73 +1,51 @@
 import streamlit as st
-import instaloader
+import requests
 import pandas as pd
 import plotly.express as px
 
-# 1. ตั้งค่าหน้าเว็บ
-st.set_page_config(page_title="IG Basic Dashboard", layout="wide")
+st.set_page_config(page_title="Artist Mockup Dashboard", layout="wide")
+st.title("🎨 Artist Engagement Mockup (Stable API)")
 
-st.title("📊 Instagram Basic Data")
-st.write("ดึงข้อมูลพื้นฐานจาก Instagram (Public Data)")
+# 1. ตั้งค่า API (แนะนำให้ใส่ใน Streamlit Secrets ภายหลัง)
+API_KEY = st.sidebar.text_input("ใส่ RapidAPI Key", type="password")
+API_HOST = "instagram-scraper-stable-api.p.rapidapi.com"
+target_user = st.sidebar.text_input("IG Username", value="aespa_official")
 
-# 2. ตั้งค่าการดึงข้อมูลใน Sidebar
-target_user = st.sidebar.text_input("ใส่ชื่อ IG Artist", value="aespa_official")
-num_posts = st.sidebar.slider("จำนวนโพสต์ที่ต้องการดู", 5, 20, 10)
+# 2. ฟังก์ชันดึงข้อมูลแบบประหยัดโควตา (จำค่าไว้ 24 ชม.)
+@st.cache_data(ttl=86400) 
+def get_ig_data(username, key):
+    url = "https://instagram-scraper-stable-api.p.rapidapi.com/user_info"
+    headers = {
+        "X-RapidAPI-Key": key,
+        "X-RapidAPI-Host": API_HOST
+    }
+    querystring = {"username": username}
+    
+    response = requests.get(url, headers=headers, params=querystring)
+    return response.json()
 
-# 3. ฟังก์ชันดึงข้อมูล (มีระบบกันโดนแบนชั่วคราว)
-@st.cache_data(ttl=600)
-def get_basic_data(username, count):
-    L = instaloader.Instaloader()
-    try:
-        profile = instaloader.Profile.from_username(L.context, username)
+# 3. ส่วนแสดงผล
+if API_KEY:
+    if st.sidebar.button("ดึงข้อมูลใหม่ (ใช้โควตา)"):
+        st.cache_data.clear()
+        st.rerun()
+
+    with st.spinner("กำลังติดต่อ API..."):
+        res = get_ig_data(target_user, API_KEY)
         
-        posts_data = []
-        for i, post in enumerate(profile.get_posts()):
-            if i >= count:
-                break
-            posts_data.append({
-                "Date": post.date_local,
-                "Likes": post.likes,
-                "Comments": post.comments,
-                "Total": post.likes + post.comments,
-                "URL": f"https://www.instagram.com/p/{post.shortcode}/"
-            })
+        # ตรวจสอบว่า API ส่งข้อมูลมาถูกต้องไหม (ชื่อตัวแปรอาจปรับตาม JSON จริง)
+        if "data" in res:
+            user = res["data"]
+            # แสดง Metrics
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Followers", f"{user.get('follower_count', 0):,}")
+            c2.metric("Total Posts", f"{user.get('media_count', 0):,}")
+            c3.metric("Quota Status", "Active")
             
-        return {
-            "full_name": profile.full_name,
-            "followers": profile.followers,
-            "following": profile.followees,
-            "df": pd.DataFrame(posts_data)
-        }
-    except Exception as e:
-        return e
-
-# 4. ส่วนแสดงผล
-if st.sidebar.button('อัปเดตข้อมูล'):
-    st.cache_data.clear()
-
-with st.spinner('กำลังโหลด...'):
-    result = get_basic_data(target_user, num_posts)
-
-    if isinstance(result, Exception):
-        st.error(f"พบข้อผิดพลาด: {result}")
-        st.info("คำแนะนำ: หากขึ้น 429 หรือ 401 แสดงว่า IG บล็อก IP ของเซิร์ฟเวอร์ชั่วคราว ให้รอประมาณ 15 นาทีแล้วค่อยกดอัปเดตใหม่ครับ")
-    else:
-        # แสดงตัวเลขสรุป (Metrics)
-        st.subheader(f"บัญชี: {result['full_name']} (@{target_user})")
-        col1, col2, col3 = st.columns(3)
-        col1.metric("ผู้ติดตาม (Followers)", f"{result['followers']:,}")
-        col2.metric("กำลังติดตาม (Following)", f"{result['following']:,}")
-        col3.metric("วิเคราะห์ล่าสุด (Posts)", len(result['df']))
-
-        st.divider()
-
-        # แสดงกราฟแท่งยอด Like ของแต่ละโพสต์
-        st.subheader("📈 ยอด Like ของโพสต์ล่าสุด")
-        fig = px.bar(result['df'], x="Date", y="Likes", 
-                     hover_data=["Comments", "URL"],
-                     title=f"Likes per Post for {target_user}")
-        st.plotly_chart(fig, use_container_width=True)
-
-        # แสดงตารางข้อมูลดิบ
-        st.subheader("📋 ตารางข้อมูลโพสต์")
-        st.dataframe(result['df'], use_container_width=True)
+            st.success(f"แสดงข้อมูลของ {user.get('full_name')} เรียบร้อย!")
+            # ตรงนี้คุณสามารถเพิ่มโค้ดทำกราฟจากข้อมูลใน user['edge_owner_to_timeline_media'] ได้
+        else:
+            st.error("ไม่สามารถดึงข้อมูลได้ โปรดเช็ก API Key หรือ Username")
+            st.json(res) # แสดง Error เพื่อใช้ Debug
+else:
+    st.info("กรุณาใส่ API Key ใน Sidebar เพื่อเริ่มต้นครับ")
