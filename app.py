@@ -13,7 +13,7 @@ target_user = st.sidebar.text_input("IG Username", value="aespa_official")
 @st.cache_data(ttl=86400)
 def get_profile_data(username, key):
     # ใช้ Endpoint ตัวหลักสำหรับข้อมูลโปรไฟล์
-    url = "https://instagram-scraper-stable-api.p.rapidapi.com/ig_profile_info.php"
+    url = "https://instagram-scraper-stable-api.p.rapidapi.com/ig_get_fb_profile.php"
     headers = {
         "X-RapidAPI-Key": key,
         "X-RapidAPI-Host": "instagram-scraper-stable-api.p.rapidapi.com"
