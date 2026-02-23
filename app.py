@@ -7,7 +7,8 @@ st.set_page_config(page_title="Artist Mockup Dashboard", layout="wide")
 st.title("🎨 Artist Engagement Mockup (Stable API)")
 
 # 1. ตั้งค่า API (แนะนำให้ใส่ใน Streamlit Secrets ภายหลัง)
-API_KEY = st.sidebar.text_input("ใส่ RapidAPI Key", type="password")
+#API_KEY = st.sidebar.text_input("ใส่ RapidAPI Key", type="password")
+API_KEY = st.secrets["MY_API_KEY"]
 API_HOST = "instagram-scraper-stable-api.p.rapidapi.com"
 target_user = st.sidebar.text_input("IG Username", value="aespa_official")
 
