@@ -1,36 +1,40 @@
 import streamlit as st
 import requests
 
-# --- 1. CONFIG & STYLE ---
+# --- 1. CONFIG & STYLE (แก้ไขจุดที่ Error) ---
 st.set_page_config(page_title="Artist Insights", layout="wide")
 
-# ปรับ CSS เล็กน้อยให้รูปโปรไฟล์เป็นวงกลมและตัวเลขเด่นชัด
+# แก้ไขจาก unsafe_allow_status_code เป็น unsafe_allow_html
 st.markdown("""
     <style>
-    .metric-card { background-color: #f0f2f6; padding: 20px; border-radius: 10px; text-align: center; }
-    .stMetric { background-color: #ffffff; border-radius: 10px; padding: 15px; border: 1px solid #e6e9ef; }
+    .stMetric { background-color: #ffffff; border-radius: 10px; padding: 15px; border: 1px solid #e6e9ef; box-shadow: 2px 2px 5px rgba(0,0,0,0.05); }
     </style>
-    """, unsafe_allow_status_code=True)
+    """, unsafe_allow_html=True)
 
-# --- 2. API CONNECT (คงเดิมเพื่อความเสถียร) ---
+# --- 2. API CONNECT (ใช้ Secrets เพื่อความปลอดภัย) ---
 API_KEY = st.secrets.get("RAPIDAPI_KEY", "")
 API_HOST = "instagram-scraper-stable-api.p.rapidapi.com"
 
-@st.cache_data(ttl=86400)
+@st.cache_data(ttl=86400) # จำข้อมูลไว้ 24 ชม. เพื่อประหยัดโควตา 10 ครั้ง/วัน
 def fetch_artist_data(username):
     url = f"https://{API_HOST}/ig_basic_user_posts.php"
     headers = {"X-RapidAPI-Key": API_KEY, "X-RapidAPI-Host": API_HOST}
-    params = {"username_or_url": username} # ต้องใช้ชื่อนี้เท่านั้นสำหรับ Endpoint นี้
-    return requests.get(url, headers=headers, params=params)
+    params = {"username_or_url": username} 
+    
+    try:
+        # ดึงข้อมูลแบบ GET ตามคู่มือ API
+        response = requests.get(url, headers=headers, params=params, timeout=15)
+        return response
+    except Exception as e:
+        return None
 
 # --- 3. SIDEBAR ---
 with st.sidebar:
-    st.image("https://cdn-icons-png.flaticon.com/512/174/174855.png", width=50)
-    st.title("Settings")
+    st.title("🎨 Artist Settings")
     target_user = st.text_input("IG Username", value="aespa_official")
-    update_btn = st.button("🔄 อัปเดตข้อมูล")
+    update_btn = st.button("🔄 ดึงข้อมูลใหม่")
     st.divider()
-    st.caption("📊 Quota: 10/day | ⏱️ 3/min")
+    st.caption("📊 ขีดจำกัด: 10 ครั้ง/วัน")
 
 if update_btn:
     st.cache_data.clear()
@@ -38,60 +42,55 @@ if update_btn:
 
 # --- 4. MAIN UI ---
 if not API_KEY:
-    st.error("กรุณาตั้งค่า RAPIDAPI_KEY ใน Secrets")
+    st.error("⚠️ ไม่พบ API Key ใน Secrets โปรดตั้งค่า RAPIDAPI_KEY ก่อน")
 else:
-    with st.spinner("กำลังจัดเตรียมข้อมูล..."):
+    with st.spinner("🚀 กำลังโหลดข้อมูล..."):
         response = fetch_artist_data(target_user)
         
         if response and response.status_code == 200:
             data = response.json()
+            # แงะข้อมูลจากโครงสร้าง Basic User + Posts
             user = data.get('data', {}).get('user', {})
-            posts = data.get('data', {}).get('items', []) # ดึงรายการโพสต์
+            posts = data.get('data', {}).get('items', [])
 
             # --- Header Section ---
             col_img, col_info = st.columns([1, 3])
             
             with col_img:
-                # แสดงรูปโปรไฟล์ (ถ้ามี)
                 profile_pic = user.get('profile_pic_url', 'https://via.placeholder.com/150')
-                st.image(profile_pic, width=180)
+                st.image(profile_pic, width=150)
 
             with col_info:
-                st.title(f"✨ {user.get('full_name', target_user)}")
-                st.write(f"@{user.get('username', target_user)}")
+                st.title(user.get('full_name', target_user))
                 st.write(f"**Bio:** {user.get('biography', 'No bio available.')}")
-                if user.get('external_url'):
-                    st.link_button("🔗 ลิงก์ที่เกี่ยวข้อง", user['external_url'])
+                st.write(f"🔗 [Link]({user.get('external_url', '#')})")
 
             st.divider()
 
             # --- Metrics Section ---
             m1, m2, m3 = st.columns(3)
-            # แสดงยอด Followers, Following และจำนวนโพสต์
-            m1.metric("Followers 👥", f"{user.get('follower_count', 0):,}")
-            m2.metric("Following 🤝", f"{user.get('following_count', 0):,}")
-            m3.metric("Total Posts 📮", f"{user.get('media_count', 0):,}")
+            m1.metric("Followers", f"{user.get('follower_count', 0):,}")
+            m2.metric("Following", f"{user.get('following_count', 0):,}")
+            m3.metric("Posts", f"{user.get('media_count', 0):,}")
 
             st.divider()
 
-            # --- Posts Grid Section (โชว์ความเป็น Mockup IG) ---
-            st.subheader("🖼️ Latest Posts")
+            # --- Posts Grid ---
+            st.subheader("📸 Latest Posts")
             if posts:
-                # จัดเรียงเป็นแถวละ 3 รูป เหมือนใน Instagram
-                post_cols = st.columns(3)
-                for index, post in enumerate(posts[:9]): # โชว์ 9 โพสต์ล่าสุด
-                    with post_cols[index % 3]:
-                        # ดึงรูปจากโพสต์ล่าสุด
-                        img_url = post.get('image_versions', {}).get('items', [{}])[0].get('url')
-                        if img_url:
-                            st.image(img_url, use_container_width=True)
-                            # แสดงยอด Like ของแต่ละโพสต์ (ถ้ามีข้อมูล)
-                            likes = post.get('like_count', 0)
-                            st.caption(f"❤️ {likes:,} likes")
+                # แสดงผล 3 คอลัมน์แบบ IG Grid
+                grid_cols = st.columns(3)
+                for i, post in enumerate(posts[:6]): # โชว์ 6 รูปล่าสุด
+                    with grid_cols[i % 3]:
+                        # เข้าถึง URL รูปภาพในโครงสร้าง JSON ของ API
+                        img_list = post.get('image_versions', {}).get('items', [])
+                        if img_list:
+                            st.image(img_list[0].get('url'), use_container_width=True)
+                            st.caption(f"❤️ {post.get('like_count', 0):,} likes")
             else:
-                st.info("ไม่พบข้อมูลโพสต์ล่าสุด หรือบัญชีนี้อาจเป็น Private")
+                st.info("ไม่พบข้อมูลโพสต์ล่าสุด")
 
         elif response and response.status_code == 429:
-            st.error("Rate Limit: โปรดรอ 20 วินาทีก่อนกดอัปเดตใหม่")
-        else:
-            st.error("ไม่สามารถดึงข้อมูลได้ โปรดเช็กชื่อ IG หรือสถานะบัญชี")
+            st.error("⏱️ Rate Limit: คุณกดเร็วเกินไป (เกิน 3 ครั้ง/นาที) โปรดรอสักครู่")
+        elif response:
+            st.error(f"Error {response.status_code}: {response.text}")
