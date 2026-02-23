@@ -8,7 +8,7 @@ st.title("📱 IG Profile Insights")
 # ดึง Key จาก Secrets เพื่อความปลอดภัย (ไม่ต้องกรอกเองในหน้าเว็บ)
 API_KEY = st.secrets.get("RAPIDAPI_KEY", "")
 API_HOST = "instagram-scraper-stable-api.p.rapidapi.com"
-ENDPOINT_URL = "https://instagram-scraper-stable-api.p.rapidapi.com/ig_profile_info.php"
+ENDPOINT_URL = "https://instagram-scraper-stable-api.p.rapidapi.com/ig_get_fb_profile_hover.php"
 
 # --- SIDEBAR ---
 st.sidebar.header("Settings")
